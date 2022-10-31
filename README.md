@@ -8,6 +8,32 @@ The actions of the agent are simple: two continuous actions that sum to 1 that i
 
 Generally, the reward that the agent receives is based on when the agent runs out of money. The earlier the agent runs out of money, the lower the reward. The maximum reward is acheived by getting to age 100 without running out of money. 
 
+## How to evaluate an agent in this environment
+Once an agent is trained in the environment, we need a way to evaluate its performance to see if it is superior to existing strategies applied by financial advisors. To do this, we'll run many "evaluation" episodes using each strategy, and compare the results to those of the trained RL agent in its evaluation episodes.
+
+### Existing strategies
+Some existing allocation strategies include:
+* Constant allocation (typically in increments of 10% equity)
+* Reducing equity allocation in accordance to age (for example, equity weight equals 100-age)
+
+Some existing rebalancing strategies include:
+* Never rebalancing
+* Full rebalance at each timestep
+* Partial rebalance at each timestep
+* Trigger-based rebalancing
+
+### Metrics worth measuring
+* Percentage of life in financial ruin
+* Percentage of episodes ending with money
+
+### Sanity checks on trained agents
+* Keeping age constant, does the agent invest more in equities when they have less money?
+* Keeping money constant, does the agent invest more in equities as they get older?
+* Are the actions similar for similar states?
+
+## Enhancements beyond proof-of-concept
+Once the 
+
 Actions
 * Asset Allocation
 * Asset Location
