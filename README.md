@@ -1,6 +1,13 @@
 # RL-FinancialPlanning-Env
 Series of financial planning RL environments that progressively add complexity to eventually become a useful tool for financial planning &amp; retail investment management professionals.
 
+## Description of proof-of-concept environment
+The initial environment will be hyper simple in order to serve as a proof of concept. It involves an environment that offers two investment choices (SP500 & cash) that sample from normal random returns each timestep. Each episode begins at retirement with a given amount of lifetime savings in a tax-exempt (Roth) account. A fixed amount of spending is withdrawn from the account each timestep. The episode is over when one of two events occur: the agent runs out of money, or the agent reaches age 100. 
+
+The actions of the agent are simple: two continuous actions that sum to 1 that indicate the percentage of their account invested in cash and the percentage invested in SP500.
+
+Generally, the reward that the agent receives is based on when the agent runs out of money. The earlier the agent runs out of money, the lower the reward. The maximum reward is acheived by getting to age 100 without running out of money. 
+
 Actions
 * Asset Allocation
 * Asset Location
