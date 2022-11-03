@@ -57,3 +57,4 @@ Rewards
 * As the agent gets authority to change spending amounts in each period, the reward for that spending should be commensurate. Typically, this reward is concave as spending increases.
 * Many investors have a goal of leaving some money to their families / favorite causes after the die. The greater the amount left, the greater the reward. Again, this reward should be concave as the bequest increases.
 * Regarding gifting, the more gifting, the more reward. Again, this reward should be concave as gifting amount increases.
+* whatever
