@@ -122,7 +122,7 @@ class TrainingEnv(gym.Env):
 
         starting_port_value_reset = 1
 
-        target_spend_dollars_reset = 0.04
+        target_spend_dollars_reset = 0.02
 
         sec_pct_reset = np.ones(self.count_buyable_securities) / self.count_buyable_securities
 
