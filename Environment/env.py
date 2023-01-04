@@ -38,6 +38,9 @@ class TrainingEnv(gym.Env):
             type(action),
         )
 
+        if np.sum(action) < 0.0000001:
+            action = action + 0.5
+
         invest_pct = action / np.maximum(np.sum(action), 0.000000001)
 
         if np.sum(invest_pct) > 1.0000001:
