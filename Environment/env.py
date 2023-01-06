@@ -18,7 +18,7 @@ class TrainingEnv(gym.Env):
                                   np.ones(self.count_buyable_securities)))  # security weights
 
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
-        self.action_space = spaces.Box(low=0, high=1, shape=(self.count_buyable_securities,), dtype=np.float32)
+        self.action_space = spaces.Box(low=0.0, high=1.0, shape=(self.count_buyable_securities,), dtype=np.float32)
 
         self.stepsPerYear = 2
 
