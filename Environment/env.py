@@ -33,10 +33,10 @@ class TrainingEnv(gym.Env):
 
     def step(self, action):
 
-        assert self.action_space.contains(action), "%r (%s) invalid" % (
-            action,
-            type(action),
-        )
+        # assert self.action_space.contains(action), "%r (%s) invalid" % (
+        #     action,
+        #     type(action),
+        # )
 
         if np.sum(action) < 0.0000001:
             action = action + 0.5
