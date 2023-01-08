@@ -43,6 +43,12 @@ class TrainingEnv(gym.Env):
 
         invest_pct = action / np.maximum(np.sum(action), 0.000000001)
 
+        if np.sum(invest_pct) < 0.9999999:
+            fuck_me
+
+        if np.sum(invest_pct) > 1.0000001:
+            fuck_me
+
         if np.sum(invest_pct) > 1.0001:
             raise NameError("invest_pct = " + str(invest_pct))
 

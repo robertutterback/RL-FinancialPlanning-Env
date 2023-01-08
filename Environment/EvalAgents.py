@@ -5,12 +5,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
-# need a way to source the Env directly from github without having to copy it to the local machine
-
 # for the time being, load Env from local machine
-exec(open('C:\\Users\\keith\\PycharmProjects\\RL-FinancialPlanning-Env\\Environment\\env.py').read())
+# exec(open('C:\\Users\\keith\\PycharmProjects\\RL-FinancialPlanning-Env\\Environment\\env.py').read())
 
-# execfile('C:\\Users\\keith\\PycharmProjects\\RL-FinancialPlanning-Env\\Environment\\env.py')
+from env import *
+
 env = TrainingEnv()
 
 
@@ -52,7 +51,7 @@ def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equ
                 action_equity_weight = base_equity_weight - 0.025
             else:
                 action_equity_weight = sop_equity_weight
-    action = np.array([1-action_equity_weight, action_equity_weight])
+    action = np.float32(np.array([1-action_equity_weight, action_equity_weight]))
     return action
 
 
