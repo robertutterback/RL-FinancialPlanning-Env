@@ -8,13 +8,51 @@ import pandas as pd
 # for the time being, load Env from local machine
 # exec(open('C:\\Users\\keith\\PycharmProjects\\RL-FinancialPlanning-Env\\Environment\\env.py').read())
 
+from pydrive.auth import GoogleAuth
+from pydrive.drive import GoogleDrive
+from pathlib import Path
+
+
+def remove_models(p: Path):
+    if p.is_file(): return p.unlink()
+    for child in p.iterdir():
+        remove_models(child)
+    p.rmdir()
+
+
+def download_models(gdrive, path, out_dir):
+    out_dir = Path(out_dir)
+    remove_models(out_dir)
+    out_dir.mkdir()
+
+    prev = 'root'
+    for folder in path.split('/'):
+        query = f"'{prev}' in parents and title='{folder}' and trashed=false"
+        file_list = drive.ListFile({'q': query}).GetList()
+        assert len(file_list) == 1
+        assert file_list[0]['mimeType'] == 'application/vnd.google-apps.folder'
+        prev = file_list[0]['id']
+
+    query = f"'{prev}' in parents and trashed=false"
+    file_list = drive.ListFile({'q': query}).GetList()
+    for info in file_list:
+        remote_file = drive.CreateFile({'id': info['id']})
+        local_filename = out_dir / info['title'].replace(' ', '-')
+        remote_file.GetContentFile(local_filename)
+    return [f['title'] for f in file_list]
+
+
+gauth = GoogleAuth()
+gauth.LoadCredentialsFile("creds-gdrive.txt")
+drive = GoogleDrive(gauth)
+download_models(drive, "Colab Notebooks/testfolder/embedded", "models")
+
 from env import *
 
 env = TrainingEnv()
 
 
 def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equity_weight, first_step):
-
     # env: environment to evaluate agent in
     # base_equity_weight: reference equity weight
     # rebal_strategy: when does the agent rebalance to the base_equity_weight
@@ -51,12 +89,12 @@ def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equ
                 action_equity_weight = base_equity_weight - 0.025
             else:
                 action_equity_weight = sop_equity_weight
-    action = np.float32(np.array([1-action_equity_weight, action_equity_weight]))
+    action = np.float32(np.array([1 - action_equity_weight, action_equity_weight]))
     return action
 
 
-def eval_agents(env, count_episodes=1000, trained_naive_both='naive', trained_path='C:\\users\\keith\\pycharmprojects\\rl-financialplanning-env\\trained_agents\\'):
-
+def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
+                trained_path='C:\\users\\keith\\pycharmprojects\\rl-financialplanning-env\\trained_agents\\'):
     # env: environment to evaluate agent in
     # count_episodes: number of episodes to evaluate agent in
     # trained_naive_both: are we evaluating a trained agent, a naive agent, or both
@@ -96,17 +134,21 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='naive', trained_pa
             this_ep_reward = 0
 
             if agent_number < count_naive_agents:
-                this_action = naive_agent_action(env, base_equity_weight, rebal_strategy, obs[0], obs[4], first_step=True)
+                this_action = naive_agent_action(env, base_equity_weight, rebal_strategy, obs[0], obs[4],
+                                                 first_step=True)
 
             while not ep_done:
 
                 obs, this_step_reward, ep_done, info = env.step(this_action)
                 this_ep_reward += this_step_reward
                 if agent_number < count_naive_agents:
-                    this_action = naive_agent_action(env, base_equity_weight, rebal_strategy, obs[0], obs[4], first_step=False)
+                    this_action = naive_agent_action(env, base_equity_weight, rebal_strategy, obs[0], obs[4],
+                                                     first_step=False)
 
             # add the results to the pandas variable
-            results = results.append({'agent_name': this_agent_name, 'episode_number': ep_loop, 'reward': this_ep_reward, 'ending_age': obs[0], 'ending_portfolio_value': obs[1]}, ignore_index=True)
+            results = results.append(
+                {'agent_name': this_agent_name, 'episode_number': ep_loop, 'reward': this_ep_reward,
+                 'ending_age': obs[0], 'ending_portfolio_value': obs[1]}, ignore_index=True)
 
     return results
 
@@ -130,8 +172,3 @@ results = eval_agents(env, count_episodes=10, trained_naive_both='naive')
 # # make a bar chart of the summary_results
 # summary_results['reward'].plot(kind='bar')
 # plt.show()
-
-
-
-
-
