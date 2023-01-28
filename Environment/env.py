@@ -18,7 +18,7 @@ class TrainingEnv(gym.Env):
                                   np.ones(self.count_buyable_securities)))  # security weights
 
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
-        self.action_space = spaces.Box(low=0.0, high=1.0, shape=(self.count_buyable_securities,), dtype=np.float32)
+        self.action_space = spaces.Box(low=0.0, high=1.0, shape=(self.count_buyable_securities,), dtype=np.float64)
 
         self.stepsPerYear = 2
 
@@ -39,15 +39,10 @@ class TrainingEnv(gym.Env):
         # )
 
         if np.sum(action) < 0.0000001:
+            raise NameErr
             action = action + 0.5
 
         invest_pct = action / np.maximum(np.sum(action), 0.000000001)
-
-        if np.sum(invest_pct) < 0.9999999:
-            fuck_me
-
-        if np.sum(invest_pct) > 1.0000001:
-            fuck_me
 
         if np.sum(invest_pct) > 1.0001:
             raise NameError("invest_pct = " + str(invest_pct))

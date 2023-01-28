@@ -4,16 +4,19 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import pydrive.files
 
 # for the time being, load Env from local machine
 # exec(open('C:\\Users\\keith\\PycharmProjects\\RL-FinancialPlanning-Env\\Environment\\env.py').read())
 
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
+from pydrive.files import FileNotDownloadableError
 from pathlib import Path
 
 
 def remove_models(p: Path):
+    if not p.exists(): return
     if p.is_file(): return p.unlink()
     for child in p.iterdir():
         remove_models(child)
@@ -38,14 +41,20 @@ def download_models(gdrive, path, out_dir):
     for info in file_list:
         remote_file = drive.CreateFile({'id': info['id']})
         local_filename = out_dir / info['title'].replace(' ', '-')
-        remote_file.GetContentFile(local_filename)
+        try:
+            remote_file.GetContentFile(local_filename)
+        except FileNotDownloadableError as e:
+            print(local_filename)
+            continue
+
     return [f['title'] for f in file_list]
 
 
 gauth = GoogleAuth()
-gauth.LoadCredentialsFile("creds-gdrive.txt")
+gauth.LocalWebserverAuth()
+# gauth.LoadCredentialsFile("mycreds.txt")
 drive = GoogleDrive(gauth)
-download_models(drive, "Colab Notebooks/testfolder/embedded", "models")
+download_models(drive, "Colab Notebooks/RL/TrainedModels/x0", "models")
 
 from env import *
 
@@ -66,7 +75,7 @@ def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equ
 
     # allRebalStrategies = np.array(['NoRebal', 'FullRebal', '5PctFullRebal', '5PctHalfRebal'])
     if base_equity_weight > 1.0:
-        base_equity_weight = np.min(1.0, base_equity_weight - (age_years / 100))
+        base_equity_weight = min(1.0, base_equity_weight - (age_years / 100))
     else:
         base_equity_weight = base_equity_weight
 
@@ -74,9 +83,9 @@ def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equ
         action_equity_weight = base_equity_weight
     else:
         if rebal_strategy == 'NoRebal':
-            return sop_equity_weight
+            action_equity_weight = sop_equity_weight
         elif rebal_strategy == 'FullRebal':
-            return base_equity_weight
+            action_equity_weight = base_equity_weight
         elif rebal_strategy == '5PctFullRebal':
             if abs(sop_equity_weight - base_equity_weight) > 0.05:
                 action_equity_weight = base_equity_weight
@@ -146,14 +155,18 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
                                                      first_step=False)
 
             # add the results to the pandas variable
-            results = results.append(
+            results.loc[len(results.index)] = \
                 {'agent_name': this_agent_name, 'episode_number': ep_loop, 'reward': this_ep_reward,
-                 'ending_age': obs[0], 'ending_portfolio_value': obs[1]}, ignore_index=True)
+                 'ending_age': obs[0], 'ending_portfolio_value': obs[1]}
+
+
 
     return results
 
 
 results = eval_agents(env, count_episodes=10, trained_naive_both='naive')
+
+print(results)
 
 # # determine the number of episodes that ended with a reward below zero for each agent
 # results['reward_below_zero'] = results['reward'] < 0
