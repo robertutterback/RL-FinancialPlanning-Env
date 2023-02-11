@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import pydrive.files
+import glob
 
 # for the time being, load Env from local machine
 # exec(open('C:\\Users\\keith\\PycharmProjects\\RL-FinancialPlanning-Env\\Environment\\env.py').read())
@@ -13,6 +14,12 @@ from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 from pydrive.files import FileNotDownloadableError
 from pathlib import Path
+
+import stable_baselines3
+from stable_baselines3 import DDPG
+
+import gym
+from gym import utils
 
 
 def remove_models(p: Path):
@@ -54,7 +61,7 @@ gauth = GoogleAuth()
 gauth.LocalWebserverAuth()
 # gauth.LoadCredentialsFile("mycreds.txt")
 drive = GoogleDrive(gauth)
-download_models(drive, "Colab Notebooks/RL/TrainedModels/x0", "models")
+download_models(drive, "Colab Notebooks/RL/TrainedModels/x0", "trained_agents")
 
 from env import *
 
@@ -102,8 +109,8 @@ def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equ
     return action
 
 
-def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
-                trained_path='C:\\users\\keith\\pycharmprojects\\rl-financialplanning-env\\trained_agents\\'):
+def eval_agents(env, count_episodes=1000, trained_naive_both='both',
+                trained_path='trained_agents/'):
     # env: environment to evaluate agent in
     # count_episodes: number of episodes to evaluate agent in
     # trained_naive_both: are we evaluating a trained agent, a naive agent, or both
@@ -118,7 +125,11 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
         count_naive_agents = 0
 
     # determine the number of trained agents
-    count_trained_agents = 0
+    if trained_naive_both != 'naive':
+        all_trained_agents = glob.glob(trained_path + '*.zip')
+        count_trained_agents = len(all_trained_agents)
+    else:
+        count_trained_agents = 0
 
     count_total_agents = count_naive_agents + count_trained_agents
 
@@ -133,6 +144,9 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
             base_equity_weight = all_base_weights[agent_number // all_rebal_strategies.shape[0]]
             rebal_strategy = all_rebal_strategies[agent_number % all_rebal_strategies.shape[0]]
             this_agent_name = 'naive_' + str(base_equity_weight) + '_' + rebal_strategy
+        else:
+            this_agent_name = all_trained_agents[agent_number - count_naive_agents].replace(trained_path, '')
+            this_agent = DDPG.load(all_trained_agents[agent_number - count_naive_agents])
 
         # loop through all the episodes
         for ep_loop in range(count_episodes):
@@ -145,6 +159,8 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
             if agent_number < count_naive_agents:
                 this_action = naive_agent_action(env, base_equity_weight, rebal_strategy, obs[0], obs[4],
                                                  first_step=True)
+            else:
+                this_action = this_agent.predict(obs)
 
             while not ep_done:
 
@@ -164,7 +180,7 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
     return results
 
 
-results = eval_agents(env, count_episodes=10, trained_naive_both='naive')
+results = eval_agents(env, count_episodes=10, trained_naive_both='both')
 
 print(results)
 
