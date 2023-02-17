@@ -19,7 +19,7 @@ class TrainingEnv(Env):
                                   dtype=np.float32)
 
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
-        self.action_space = spaces.Box(low=0.0, high=1.0, shape=(self.count_buyable_securities,), dtype=np.float32)
+        self.action_space = spaces.Box(low=0.0, high=1.0, shape=(self.count_buyable_securities,), dtype=np.float64)
 
         self.stepsPerYear = 2
 
@@ -39,6 +39,7 @@ class TrainingEnv(Env):
         #     type(action),
         # )
         if np.sum(action) < 0.0000001:
+            raise NameErr
             action = action + 0.5
 
         # TODO: is this next line necessary? We make sure above that the maximum will be the sum, and we can also

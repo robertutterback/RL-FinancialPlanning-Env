@@ -5,6 +5,8 @@ import os
 # source packages
 import numpy as np
 import pandas as pd
+import pydrive.files
+import glob
 
 # for the time being, load Env from local machine
 from env import TrainingEnv
@@ -13,10 +15,10 @@ from stable_baselines3 import DDPG
 from pydrive.files import FileNotDownloadableError
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
+from pydrive.files import FileNotDownloadableError
 from pathlib import Path
 
 DOWNLOAD_MODELS: bool = False
-
 
 def remove_models(p: Path):
     if not p.exists(): return
@@ -70,9 +72,8 @@ if DOWNLOAD_MODELS:
         gauth.Authorize()
     gauth.SaveCredentialsFile("creds-gdrive.txt")
     drive = GoogleDrive(gauth)
-    # download_models(drive, "Colab Notebooks/testfolder/embedded", "models")
-    download_models(drive, "x0", "keith_models", owner='Keith England')
-
+    download_models(drive, "Colab Notebooks/testfolder/embedded", "models")
+    #download_models(drive, "x0", "keith_models", owner='Keith England')
 
 def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equity_weight, first_step):
     # env: environment to evaluate agent in
@@ -188,7 +189,7 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='both',
     return results
 
 results = eval_agents(TrainingEnv(), count_episodes=10, trained_naive_both='both',
-                      trained_path='keith_models/')
+                      trained_path='models/')
 grouped = results.groupby('agent_name')
 perc_ep_ruin = grouped['reward'].apply(lambda rewards: (rewards < 0).mean())
 avg_reward = grouped['reward'].mean()
@@ -196,7 +197,7 @@ avg_end_age = grouped['ending_age'].mean()
 summary = pd.DataFrame({'% episodes ended in ruined': perc_ep_ruin, 'avg reward': avg_reward, 'avg ending age': avg_end_age})
 with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.max_colwidth', 25):
     print(summary.sort_values(by='avg reward', ascending=False))
-#
+
 #
 #
 # # make a bar chart of the summary_results
