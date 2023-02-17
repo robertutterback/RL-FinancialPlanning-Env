@@ -6,29 +6,40 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 # for the time being, load Env from local machine
-# exec(open('C:\\Users\\keith\\PycharmProjects\\RL-FinancialPlanning-Env\\Environment\\env.py').read())
+from env import *
 
+env = TrainingEnv()
+
+from pydrive.files import FileNotDownloadableError
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 from pathlib import Path
 
+DOWNLOAD_MODELS: bool = False
+
 
 def remove_models(p: Path):
+    if not p.exists(): return
     if p.is_file(): return p.unlink()
     for child in p.iterdir():
         remove_models(child)
     p.rmdir()
 
 
-def download_models(gdrive, path, out_dir):
+def download_models(gdrive, path, out_dir, owner=None):
     out_dir = Path(out_dir)
     remove_models(out_dir)
     out_dir.mkdir()
 
-    prev = 'root'
+    # Shared folders don't seem to have any parents (not even 'root').
+    # The owner name is listed in the 'ownerNames' list, but it seems like
+    # Google Drive doesn't let you query by that. The following works for now but
+    # is probably not safe.
+    prev = '' if owner else 'root'
     for folder in path.split('/'):
-        query = f"'{prev}' in parents and title='{folder}' and trashed=false"
-        file_list = drive.ListFile({'q': query}).GetList()
+        parent = f"'{prev}' in parents and " if prev else ''
+        query = f"{parent} title='{folder}' and trashed=false"
+        file_list = drive.ListFile({'q': query, 'supportsAllDrives': True, 'includeItemsFromAllDrives': True}).GetList()
         assert len(file_list) == 1
         assert file_list[0]['mimeType'] == 'application/vnd.google-apps.folder'
         prev = file_list[0]['id']
@@ -38,18 +49,29 @@ def download_models(gdrive, path, out_dir):
     for info in file_list:
         remote_file = drive.CreateFile({'id': info['id']})
         local_filename = out_dir / info['title'].replace(' ', '-')
-        remote_file.GetContentFile(local_filename)
+        try:
+            remote_file.GetContentFile(local_filename)
+        except FileNotDownloadableError as e:
+            print(f"Could not download {info['title']} ; message follows.")
+            print(e)
+            continue
     return [f['title'] for f in file_list]
 
 
-gauth = GoogleAuth()
-gauth.LoadCredentialsFile("creds-gdrive.txt")
-drive = GoogleDrive(gauth)
-download_models(drive, "Colab Notebooks/testfolder/embedded", "models")
-
-from env import *
-
-env = TrainingEnv()
+# https://stackoverflow.com/questions/24419188/automating-pydrive-verification-process
+if DOWNLOAD_MODELS:
+    gauth = GoogleAuth()
+    gauth.LoadCredentialsFile("creds-gdrive.txt")
+    if gauth.credentials is None:
+        gauth.LocalWebserverAuth()
+    elif gauth.access_token_expired:
+        gauth.Refresh()
+    else:
+        gauth.Authorize()
+    gauth.SaveCredentialsFile("creds-gdrive.txt")
+    drive = GoogleDrive(gauth)
+    # download_models(drive, "Colab Notebooks/testfolder/embedded", "models")
+    download_models(drive, "x0", "keith_models", owner='Keith England')
 
 
 def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equity_weight, first_step):
@@ -66,7 +88,7 @@ def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equ
 
     # allRebalStrategies = np.array(['NoRebal', 'FullRebal', '5PctFullRebal', '5PctHalfRebal'])
     if base_equity_weight > 1.0:
-        base_equity_weight = np.min(1.0, base_equity_weight - (age_years / 100))
+        base_equity_weight = min(1.0, base_equity_weight - (age_years / 100))
     else:
         base_equity_weight = base_equity_weight
 
@@ -74,9 +96,9 @@ def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equ
         action_equity_weight = base_equity_weight
     else:
         if rebal_strategy == 'NoRebal':
-            return sop_equity_weight
+            action_equity_weight = sop_equity_weight
         elif rebal_strategy == 'FullRebal':
-            return base_equity_weight
+            action_equity_weight = base_equity_weight
         elif rebal_strategy == '5PctFullRebal':
             if abs(sop_equity_weight - base_equity_weight) > 0.05:
                 action_equity_weight = base_equity_weight
@@ -89,7 +111,7 @@ def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equ
                 action_equity_weight = base_equity_weight - 0.025
             else:
                 action_equity_weight = sop_equity_weight
-    action = np.float32(np.array([1 - action_equity_weight, action_equity_weight]))
+    action = np.array([1.0 - action_equity_weight, action_equity_weight], dtype=np.float32)
     return action
 
 
@@ -138,7 +160,6 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
                                                  first_step=True)
 
             while not ep_done:
-
                 obs, this_step_reward, ep_done, info = env.step(this_action)
                 this_ep_reward += this_step_reward
                 if agent_number < count_naive_agents:
@@ -146,14 +167,19 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
                                                      first_step=False)
 
             # add the results to the pandas variable
-            results = results.append(
+            results.loc[len(results.index)] = \
                 {'agent_name': this_agent_name, 'episode_number': ep_loop, 'reward': this_ep_reward,
-                 'ending_age': obs[0], 'ending_portfolio_value': obs[1]}, ignore_index=True)
+                 'ending_age': obs[0], 'ending_portfolio_value': obs[1]}
 
     return results
 
 
-results = eval_agents(env, count_episodes=10, trained_naive_both='naive')
+# results = eval_agents(env, count_episodes=10, trained_naive_both='naive')
+name = "Model_DDPG_Lr500_Bs500_Tau0005_Ls5000_Tf40_Ts20000_Counter1.zip"
+from stable_baselines3 import DDPG
+from gym import utils
+
+model = DDPG.load("keith_models/" + name, print_system_info=True)
 
 # # determine the number of episodes that ended with a reward below zero for each agent
 # results['reward_below_zero'] = results['reward'] < 0
