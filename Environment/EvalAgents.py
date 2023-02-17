@@ -1,14 +1,14 @@
 # function to evaluate naive agents in my reinforcement learning environment
+import glob
+import os
 
 # source packages
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
 
 # for the time being, load Env from local machine
-from env import *
-
-env = TrainingEnv()
+from env import TrainingEnv
+from stable_baselines3 import DDPG
 
 from pydrive.files import FileNotDownloadableError
 from pydrive.auth import GoogleAuth
@@ -115,8 +115,8 @@ def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equ
     return action
 
 
-def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
-                trained_path='C:\\users\\keith\\pycharmprojects\\rl-financialplanning-env\\trained_agents\\'):
+def eval_agents(env, count_episodes=1000, trained_naive_both='both',
+                trained_path='trained_agents/'):
     # env: environment to evaluate agent in
     # count_episodes: number of episodes to evaluate agent in
     # trained_naive_both: are we evaluating a trained agent, a naive agent, or both
@@ -131,9 +131,15 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
         count_naive_agents = 0
 
     # determine the number of trained agents
-    count_trained_agents = 0
+    if trained_naive_both != 'naive':
+        all_trained_agents = glob.glob(trained_path + '*.zip')
+        count_trained_agents = len(all_trained_agents)
+    else:
+        count_trained_agents = 0
 
+    print(f"Evaluating {count_trained_agents} trained agents and {count_naive_agents} naive agents")
     count_total_agents = count_naive_agents + count_trained_agents
+
 
     # create a pandas variable that is the same length as the count_total_agent * count_episodes, and 5 columns
     results = pd.DataFrame(columns=['agent_name', 'episode_number', 'reward', 'ending_age', 'ending_portfolio_value'])
@@ -146,6 +152,10 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
             base_equity_weight = all_base_weights[agent_number // all_rebal_strategies.shape[0]]
             rebal_strategy = all_rebal_strategies[agent_number % all_rebal_strategies.shape[0]]
             this_agent_name = 'naive_' + str(base_equity_weight) + '_' + rebal_strategy
+        else:
+            this_agent_name = all_trained_agents[agent_number - count_naive_agents].lstrip(f"{trained_path[:-1]}{os.sep}Model_").rstrip('.zip')
+            this_agent = DDPG.load(all_trained_agents[agent_number - count_naive_agents],
+                                   custom_objects={'action_space': env.action_space})
 
         # loop through all the episodes
         for ep_loop in range(count_episodes):
@@ -158,6 +168,8 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
             if agent_number < count_naive_agents:
                 this_action = naive_agent_action(env, base_equity_weight, rebal_strategy, obs[0], obs[4],
                                                  first_step=True)
+            else:
+                this_action, _states = this_agent.predict(obs)
 
             while not ep_done:
                 obs, this_step_reward, ep_done, info = env.step(this_action)
@@ -165,6 +177,8 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
                 if agent_number < count_naive_agents:
                     this_action = naive_agent_action(env, base_equity_weight, rebal_strategy, obs[0], obs[4],
                                                      first_step=False)
+                else:
+                    this_action, _states = this_agent.predict(obs)
 
             # add the results to the pandas variable
             results.loc[len(results.index)] = \
@@ -173,25 +187,15 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='naive',
 
     return results
 
-
-# results = eval_agents(env, count_episodes=10, trained_naive_both='naive')
-name = "Model_DDPG_Lr500_Bs500_Tau0005_Ls5000_Tf40_Ts20000_Counter1.zip"
-from stable_baselines3 import DDPG
-from gym import utils
-
-model = DDPG.load("keith_models/" + name, print_system_info=True)
-
-# # determine the number of episodes that ended with a reward below zero for each agent
-# results['reward_below_zero'] = results['reward'] < 0
-# results['reward_below_zero'] = results['reward_below_zero'].astype(int)
-#
-#
-# # calculate the average reward for each agent
-# results['reward'] = results['reward'].astype(float)
-# results['ending_portfolio_value'] = results['ending_portfolio_value'].astype(float)
-# results['ending_age'] = results['ending_age'].astype(float)
-# summary_results = results.groupby(['agent_name']).mean()
-#
+results = eval_agents(TrainingEnv(), count_episodes=10, trained_naive_both='both',
+                      trained_path='keith_models/')
+grouped = results.groupby('agent_name')
+perc_ep_ruin = grouped['reward'].apply(lambda rewards: (rewards < 0).mean())
+avg_reward = grouped['reward'].mean()
+avg_end_age = grouped['ending_age'].mean()
+summary = pd.DataFrame({'% episodes ended in ruined': perc_ep_ruin, 'avg reward': avg_reward, 'avg ending age': avg_end_age})
+with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.max_colwidth', 25):
+    print(summary.sort_values(by='avg reward', ascending=False))
 #
 #
 #
