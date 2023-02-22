@@ -189,7 +189,9 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='both',
 results = eval_agents(TrainingEnv(), count_episodes=10, trained_naive_both='both',
                       trained_path='keith_models/')
 
-aggs = {'reward': [('reward', 'mean'), ('% ruin', lambda r: (r < 0).mean())], 'ending_age': [('ending_age', 'mean')]}
+base = [('mean', 'mean'), ('std', 'std'), ('spread', np.ptp)]
+aggs = {'reward': [*base, ('% ruin', lambda r: (r < 0).mean())],
+        'ending_age': base, 'ending_portfolio_value': base}
 individual = results.groupby('agent_name').agg(aggs)
 
 trained = results[results['agent_name'].str.contains('Counter\d+$')]
@@ -197,10 +199,10 @@ matches = trained['agent_name'].str.extract('(.*)_Counter\d+$', expand=False)
 combined = trained.groupby(matches).agg(aggs).rename('{}_Average'.format)
 
 summary = pd.concat([individual, combined])
-summary.columns = summary.columns.droplevel(0)
+#summary.columns = summary.columns.droplevel(0)
 with pd.option_context('display.max_rows', 10, 'display.max_columns', None, 'display.width', None,
                        'display.max_colwidth', 25):
-    print(summary.sort_values(by='reward', ascending=False))
+    print(summary.sort_values(by=('reward','mean'), ascending=False).round(4))
 
 def get_kind(label):
     if label.startswith('naive_'):
@@ -211,12 +213,13 @@ def get_kind(label):
     return 'Trained'
 summary['kind'] = summary.index.map(get_kind)
 
+
 bool_is_naive = summary['kind'] == 'Naive'
-naive = summary[bool_is_naive].nlargest(3, 'reward')
+naive = summary[bool_is_naive].nlargest(3, ('reward', 'mean'))
 
 comparison_group = pd.concat([naive, summary[~bool_is_naive]])
 comparison_group.reset_index(inplace=True)
-ax = sns.barplot(y='agent_name', x='reward', hue='kind',
+ax = sns.barplot(y='agent_name', x=('reward','mean'), hue='kind',
                  data=comparison_group)
 ax.set_title('Agent Performance')
 for i in ax.containers:
