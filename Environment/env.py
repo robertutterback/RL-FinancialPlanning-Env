@@ -39,7 +39,7 @@ class TrainingEnv(Env):
         #     type(action),
         # )
         if np.sum(action) < 0.0000001:
-            raise NameErr
+            #raise ValueError(f"Action sum is too small ({np.sum(action)})")
             action = action + 0.5
 
         # TODO: is this next line necessary? We make sure above that the maximum will be the sum, and we can also

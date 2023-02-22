@@ -1,22 +1,20 @@
 # function to evaluate naive agents in my reinforcement learning environment
 import glob
 import os
+from pathlib import Path
 
-# source packages
 import numpy as np
 import pandas as pd
-import pydrive.files
-import glob
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # for the time being, load Env from local machine
 from env import TrainingEnv
 from stable_baselines3 import DDPG
 
-from pydrive.files import FileNotDownloadableError
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
-from pydrive.files import FileNotDownloadableError
-from pathlib import Path
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
+from pydrive2.files import FileNotDownloadableError
 
 DOWNLOAD_MODELS: bool = False
 
@@ -189,17 +187,38 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='both',
     return results
 
 results = eval_agents(TrainingEnv(), count_episodes=10, trained_naive_both='both',
-                      trained_path='models/')
-grouped = results.groupby('agent_name')
-perc_ep_ruin = grouped['reward'].apply(lambda rewards: (rewards < 0).mean())
-avg_reward = grouped['reward'].mean()
-avg_end_age = grouped['ending_age'].mean()
-summary = pd.DataFrame({'% episodes ended in ruined': perc_ep_ruin, 'avg reward': avg_reward, 'avg ending age': avg_end_age})
-with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.max_colwidth', 25):
-    print(summary.sort_values(by='avg reward', ascending=False))
+                      trained_path='keith_models/')
 
-#
-#
-# # make a bar chart of the summary_results
-# summary_results['reward'].plot(kind='bar')
-# plt.show()
+aggs = {'reward': [('reward', 'mean'), ('% ruin', lambda r: (r < 0).mean())], 'ending_age': [('ending_age', 'mean')]}
+individual = results.groupby('agent_name').agg(aggs)
+
+trained = results[results['agent_name'].str.contains('Counter\d+$')]
+matches = trained['agent_name'].str.extract('(.*)_Counter\d+$', expand=False)
+combined = trained.groupby(matches).agg(aggs).rename('{}_Average'.format)
+
+summary = pd.concat([individual, combined])
+summary.columns = summary.columns.droplevel(0)
+with pd.option_context('display.max_rows', 10, 'display.max_columns', None, 'display.width', None,
+                       'display.max_colwidth', 25):
+    print(summary.sort_values(by='reward', ascending=False))
+
+def get_kind(label):
+    if label.startswith('naive_'):
+        return 'Naive'
+    assert label.startswith('DDPG_')
+    if label.endswith('Average'):
+        return 'Trained Average'
+    return 'Trained'
+summary['kind'] = summary.index.map(get_kind)
+
+bool_is_naive = summary['kind'] == 'Naive'
+naive = summary[bool_is_naive].nlargest(3, 'reward')
+
+comparison_group = pd.concat([naive, summary[~bool_is_naive]])
+comparison_group.reset_index(inplace=True)
+ax = sns.barplot(y='agent_name', x='reward', hue='kind',
+                 data=comparison_group)
+ax.set_title('Agent Performance')
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.3f')
+plt.savefig('summary.png', bbox_inches='tight')
