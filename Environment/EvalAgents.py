@@ -1,26 +1,22 @@
 # function to evaluate naive agents in my reinforcement learning environment
-
-# source packages
-import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
-import pydrive.files
 import glob
-
-# for the time being, load Env from local machine
-# exec(open('C:\\Users\\keith\\PycharmProjects\\RL-FinancialPlanning-Env\\Environment\\env.py').read())
-
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
-from pydrive.files import FileNotDownloadableError
+import os
 from pathlib import Path
 
-import stable_baselines3
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# for the time being, load Env from local machine
+from env import TrainingEnv
 from stable_baselines3 import DDPG
 
-import gym
-from gym import utils
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
+from pydrive2.files import FileNotDownloadableError
 
+DOWNLOAD_MODELS: bool = False
 
 def remove_models(p: Path):
     if not p.exists(): return
@@ -30,15 +26,20 @@ def remove_models(p: Path):
     p.rmdir()
 
 
-def download_models(gdrive, path, out_dir):
+def download_models(gdrive, path, out_dir, owner=None):
     out_dir = Path(out_dir)
     remove_models(out_dir)
     out_dir.mkdir()
 
-    prev = 'root'
+    # Shared folders don't seem to have any parents (not even 'root').
+    # The owner name is listed in the 'ownerNames' list, but it seems like
+    # Google Drive doesn't let you query by that. The following works for now but
+    # is probably not safe.
+    prev = '' if owner else 'root'
     for folder in path.split('/'):
-        query = f"'{prev}' in parents and title='{folder}' and trashed=false"
-        file_list = drive.ListFile({'q': query}).GetList()
+        parent = f"'{prev}' in parents and " if prev else ''
+        query = f"{parent} title='{folder}' and trashed=false"
+        file_list = drive.ListFile({'q': query, 'supportsAllDrives': True, 'includeItemsFromAllDrives': True}).GetList()
         assert len(file_list) == 1
         assert file_list[0]['mimeType'] == 'application/vnd.google-apps.folder'
         prev = file_list[0]['id']
@@ -51,22 +52,26 @@ def download_models(gdrive, path, out_dir):
         try:
             remote_file.GetContentFile(local_filename)
         except FileNotDownloadableError as e:
-            print(local_filename)
+            print(f"Could not download {info['title']} ; message follows.")
+            print(e)
             continue
-
     return [f['title'] for f in file_list]
 
 
-gauth = GoogleAuth()
-gauth.LocalWebserverAuth()
-# gauth.LoadCredentialsFile("mycreds.txt")
-drive = GoogleDrive(gauth)
-download_models(drive, "Colab Notebooks/RL/TrainedModels/x0", "trained_agents")
-
-from env import *
-
-env = TrainingEnv()
-
+# https://stackoverflow.com/questions/24419188/automating-pydrive-verification-process
+if DOWNLOAD_MODELS:
+    gauth = GoogleAuth()
+    gauth.LoadCredentialsFile("creds-gdrive.txt")
+    if gauth.credentials is None:
+        gauth.LocalWebserverAuth()
+    elif gauth.access_token_expired:
+        gauth.Refresh()
+    else:
+        gauth.Authorize()
+    gauth.SaveCredentialsFile("creds-gdrive.txt")
+    drive = GoogleDrive(gauth)
+    download_models(drive, "Colab Notebooks/testfolder/embedded", "models")
+    #download_models(drive, "x0", "keith_models", owner='Keith England')
 
 def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equity_weight, first_step):
     # env: environment to evaluate agent in
@@ -105,7 +110,7 @@ def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equ
                 action_equity_weight = base_equity_weight - 0.025
             else:
                 action_equity_weight = sop_equity_weight
-    action = np.float32(np.array([1 - action_equity_weight, action_equity_weight]))
+    action = np.array([1.0 - action_equity_weight, action_equity_weight], dtype=np.float32)
     return action
 
 
@@ -131,7 +136,9 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='both',
     else:
         count_trained_agents = 0
 
+    print(f"Evaluating {count_trained_agents} trained agents and {count_naive_agents} naive agents")
     count_total_agents = count_naive_agents + count_trained_agents
+
 
     # create a pandas variable that is the same length as the count_total_agent * count_episodes, and 5 columns
     results = pd.DataFrame(columns=['agent_name', 'episode_number', 'reward', 'ending_age', 'ending_portfolio_value'])
@@ -145,8 +152,9 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='both',
             rebal_strategy = all_rebal_strategies[agent_number % all_rebal_strategies.shape[0]]
             this_agent_name = 'naive_' + str(base_equity_weight) + '_' + rebal_strategy
         else:
-            this_agent_name = all_trained_agents[agent_number - count_naive_agents].replace(trained_path, '')
-            this_agent = DDPG.load(all_trained_agents[agent_number - count_naive_agents])
+            this_agent_name = all_trained_agents[agent_number - count_naive_agents].lstrip(f"{trained_path[:-1]}{os.sep}Model_").rstrip('.zip')
+            this_agent = DDPG.load(all_trained_agents[agent_number - count_naive_agents],
+                                   custom_objects={'action_space': env.action_space})
 
         # loop through all the episodes
         for ep_loop in range(count_episodes):
@@ -160,44 +168,60 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='both',
                 this_action = naive_agent_action(env, base_equity_weight, rebal_strategy, obs[0], obs[4],
                                                  first_step=True)
             else:
-                this_action = this_agent.predict(obs)
+                this_action, _states = this_agent.predict(obs)
 
             while not ep_done:
-
                 obs, this_step_reward, ep_done, info = env.step(this_action)
                 this_ep_reward += this_step_reward
                 if agent_number < count_naive_agents:
                     this_action = naive_agent_action(env, base_equity_weight, rebal_strategy, obs[0], obs[4],
                                                      first_step=False)
+                else:
+                    this_action, _states = this_agent.predict(obs)
 
             # add the results to the pandas variable
             results.loc[len(results.index)] = \
                 {'agent_name': this_agent_name, 'episode_number': ep_loop, 'reward': this_ep_reward,
                  'ending_age': obs[0], 'ending_portfolio_value': obs[1]}
 
-
-
     return results
 
+results = eval_agents(TrainingEnv(), count_episodes=10, trained_naive_both='both',
+                      trained_path='keith_models/')
 
-results = eval_agents(env, count_episodes=10, trained_naive_both='both')
+base = [('mean', 'mean'), ('std', 'std'), ('spread', np.ptp)]
+aggs = {'reward': [*base, ('% ruin', lambda r: (r < 0).mean())],
+        'ending_age': base, 'ending_portfolio_value': base}
+individual = results.groupby('agent_name').agg(aggs)
 
-print(results)
+trained = results[results['agent_name'].str.contains('Counter\d+$')]
+matches = trained['agent_name'].str.extract('(.*)_Counter\d+$', expand=False)
+combined = trained.groupby(matches).agg(aggs).rename('{}_Average'.format)
 
-# # determine the number of episodes that ended with a reward below zero for each agent
-# results['reward_below_zero'] = results['reward'] < 0
-# results['reward_below_zero'] = results['reward_below_zero'].astype(int)
-#
-#
-# # calculate the average reward for each agent
-# results['reward'] = results['reward'].astype(float)
-# results['ending_portfolio_value'] = results['ending_portfolio_value'].astype(float)
-# results['ending_age'] = results['ending_age'].astype(float)
-# summary_results = results.groupby(['agent_name']).mean()
-#
-#
-#
-#
-# # make a bar chart of the summary_results
-# summary_results['reward'].plot(kind='bar')
-# plt.show()
+summary = pd.concat([individual, combined])
+#summary.columns = summary.columns.droplevel(0)
+with pd.option_context('display.max_rows', 10, 'display.max_columns', None, 'display.width', None,
+                       'display.max_colwidth', 25):
+    print(summary.sort_values(by=('reward','mean'), ascending=False).round(4))
+
+def get_kind(label):
+    if label.startswith('naive_'):
+        return 'Naive'
+    assert label.startswith('DDPG_')
+    if label.endswith('Average'):
+        return 'Trained Average'
+    return 'Trained'
+summary['kind'] = summary.index.map(get_kind)
+
+
+bool_is_naive = summary['kind'] == 'Naive'
+naive = summary[bool_is_naive].nlargest(3, ('reward', 'mean'))
+
+comparison_group = pd.concat([naive, summary[~bool_is_naive]])
+comparison_group.reset_index(inplace=True)
+ax = sns.barplot(y='agent_name', x=('reward','mean'), hue='kind',
+                 data=comparison_group)
+ax.set_title('Agent Performance')
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.3f')
+plt.savefig('summary.png', bbox_inches='tight')

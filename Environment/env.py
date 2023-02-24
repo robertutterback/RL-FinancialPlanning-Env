@@ -1,21 +1,22 @@
 import numpy as np
-import gym
-from gym import spaces
+from gym import spaces, Env # TODO: switch to `gymnasium` instead
 
 np.random.seed(123)
 
 
-class TrainingEnv(gym.Env):
+class TrainingEnv(Env):
 
     def __init__(self):
 
         self.count_buyable_securities = 2
 
         obs_low = np.concatenate((np.array([0, 0, 0]),  # clientAge, portValue, target_spend_dollars
-                                 np.zeros(self.count_buyable_securities)))  # security weights
+                                 np.zeros(self.count_buyable_securities)),  # security weights
+                                 dtype=np.float32)
 
         obs_high = np.concatenate((np.ones(3),  # clientAge, portValue, target_spend_dollars
-                                  np.ones(self.count_buyable_securities)))  # security weights
+                                  np.ones(self.count_buyable_securities)),  # security weights
+                                  dtype=np.float32)
 
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
         self.action_space = spaces.Box(low=0.0, high=1.0, shape=(self.count_buyable_securities,), dtype=np.float64)
@@ -31,24 +32,24 @@ class TrainingEnv(gym.Env):
         self.secExpCov = np.array([0,
                                    0, 0.04]) / self.stepsPerYear
 
-    def step(self, action):
+    def step(self, action: np.ndarray):
 
         # assert self.action_space.contains(action), "%r (%s) invalid" % (
         #     action,
         #     type(action),
         # )
-
         if np.sum(action) < 0.0000001:
-            raise NameErr
+            #raise ValueError(f"Action sum is too small ({np.sum(action)})")
             action = action + 0.5
 
+        # TODO: is this next line necessary? We make sure above that the maximum will be the sum, and we can also
+        #  ensure that the sum is 1.0 (by moving the below check up above this), so dividing by it won't change
+        #  anything.
         invest_pct = action / np.maximum(np.sum(action), 0.000000001)
 
-        if np.sum(invest_pct) > 1.0001:
-            raise NameError("invest_pct = " + str(invest_pct))
-
-        if np.sum(invest_pct) < 0.9999:
-            raise NameError("invest_pct = " + str(invest_pct))
+        total = np.sum(invest_pct)
+        if abs(total - 1.0) >= 0.0001:
+            raise ValueError(f"Invest percentages do not sum to 1 ({total})")
 
         sop_client_age, sop_port_value, target_spend_dollars = self.state[np.arange(3)]
 
