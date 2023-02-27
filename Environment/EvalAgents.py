@@ -71,7 +71,7 @@ if DOWNLOAD_MODELS:
     gauth.SaveCredentialsFile("creds-gdrive.txt")
     drive = GoogleDrive(gauth)
     download_models(drive, "Colab Notebooks/testfolder/embedded", "models")
-    #download_models(drive, "x0", "keith_models", owner='Keith England')
+    #download_models(drive, "x0", "trained_agents", owner='Keith England')
 
 def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equity_weight, first_step):
     # env: environment to evaluate agent in
@@ -186,42 +186,44 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='both',
 
     return results
 
-results = eval_agents(TrainingEnv(), count_episodes=10, trained_naive_both='both',
-                      trained_path='keith_models/')
+if __name__ == '__main__':
+    results = eval_agents(TrainingEnv(), count_episodes=10, trained_naive_both='both',
+                          trained_path='trained_agents/')
 
-base = [('mean', 'mean'), ('std', 'std'), ('spread', np.ptp)]
-aggs = {'reward': [*base, ('% ruin', lambda r: (r < 0).mean())],
-        'ending_age': base, 'ending_portfolio_value': base}
-individual = results.groupby('agent_name').agg(aggs)
+    base = [('mean', 'mean'), ('std', 'std'), ('spread', np.ptp)]
+    aggs = {'reward': [*base, ('% ruin', lambda r: (r < 0).mean())],
+            'ending_age': base, 'ending_portfolio_value': base}
+    individual = results.groupby('agent_name').agg(aggs)
 
-trained = results[results['agent_name'].str.contains('Counter\d+$')]
-matches = trained['agent_name'].str.extract('(.*)_Counter\d+$', expand=False)
-combined = trained.groupby(matches).agg(aggs).rename('{}_Average'.format)
+    # TODO: Break down this file into smaller files (plus others)
+    # TODO: Research PyCharm so Keith can explore in console after running
+    trained = individual[individual.index.str.contains('Counter\d+$')]
+    matches = trained.index.str.extract('(.*)_Counter\d+$', expand=False)
+    combined = trained.groupby(matches).mean().rename('{}_Average'.format)
 
-summary = pd.concat([individual, combined])
-#summary.columns = summary.columns.droplevel(0)
-with pd.option_context('display.max_rows', 10, 'display.max_columns', None, 'display.width', None,
-                       'display.max_colwidth', 25):
-    print(summary.sort_values(by=('reward','mean'), ascending=False).round(4))
+    summary = pd.concat([individual, combined])
+    with pd.option_context('display.max_rows', 10, 'display.max_columns', None, 'display.width', None,
+                           'display.max_colwidth', 25):
+        print(summary.sort_values(by=('reward','mean'), ascending=False).round(4))
 
-def get_kind(label):
-    if label.startswith('naive_'):
-        return 'Naive'
-    assert label.startswith('DDPG_')
-    if label.endswith('Average'):
-        return 'Trained Average'
-    return 'Trained'
-summary['kind'] = summary.index.map(get_kind)
+    def get_kind(label):
+        if label.startswith('naive_'):
+            return 'Naive'
+        assert label.startswith('DDPG_')
+        if label.endswith('Average'):
+            return 'Trained Average'
+        return 'Trained'
+    summary['kind'] = summary.index.map(get_kind)
 
 
-bool_is_naive = summary['kind'] == 'Naive'
-naive = summary[bool_is_naive].nlargest(3, ('reward', 'mean'))
+    bool_is_naive = summary['kind'] == 'Naive'
+    naive = summary[bool_is_naive].nlargest(3, ('reward', 'mean'))
 
-comparison_group = pd.concat([naive, summary[~bool_is_naive]])
-comparison_group.reset_index(inplace=True)
-ax = sns.barplot(y='agent_name', x=('reward','mean'), hue='kind',
-                 data=comparison_group)
-ax.set_title('Agent Performance')
-for i in ax.containers:
-    ax.bar_label(i, fmt='%.3f')
-plt.savefig('summary.png', bbox_inches='tight')
+    comparison_group = pd.concat([naive, summary[~bool_is_naive]])
+    comparison_group.reset_index(inplace=True)
+    ax = sns.barplot(y='agent_name', x=('reward','mean'), hue='kind',
+                     data=comparison_group)
+    ax.set_title('Agent Performance')
+    for i in ax.containers:
+        ax.bar_label(i, fmt='%.3f')
+    plt.savefig('summary.png', bbox_inches='tight')
