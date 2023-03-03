@@ -1,7 +1,6 @@
 # function to evaluate naive agents in my reinforcement learning environment
 import glob
 import os
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -9,69 +8,17 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # for the time being, load Env from local machine
+from dotenv import load_dotenv
 from env import TrainingEnv
+from download import download_models
 from stable_baselines3 import DDPG
 
-from pydrive2.auth import GoogleAuth
-from pydrive2.drive import GoogleDrive
-from pydrive2.files import FileNotDownloadableError
+load_dotenv()
 
-DOWNLOAD_MODELS: bool = False
-
-def remove_models(p: Path):
-    if not p.exists(): return
-    if p.is_file(): return p.unlink()
-    for child in p.iterdir():
-        remove_models(child)
-    p.rmdir()
-
-
-def download_models(gdrive, path, out_dir, owner=None):
-    out_dir = Path(out_dir)
-    remove_models(out_dir)
-    out_dir.mkdir()
-
-    # Shared folders don't seem to have any parents (not even 'root').
-    # The owner name is listed in the 'ownerNames' list, but it seems like
-    # Google Drive doesn't let you query by that. The following works for now but
-    # is probably not safe.
-    prev = '' if owner else 'root'
-    for folder in path.split('/'):
-        parent = f"'{prev}' in parents and " if prev else ''
-        query = f"{parent} title='{folder}' and trashed=false"
-        file_list = drive.ListFile({'q': query, 'supportsAllDrives': True, 'includeItemsFromAllDrives': True}).GetList()
-        assert len(file_list) == 1
-        assert file_list[0]['mimeType'] == 'application/vnd.google-apps.folder'
-        prev = file_list[0]['id']
-
-    query = f"'{prev}' in parents and trashed=false"
-    file_list = drive.ListFile({'q': query}).GetList()
-    for info in file_list:
-        remote_file = drive.CreateFile({'id': info['id']})
-        local_filename = out_dir / info['title'].replace(' ', '-')
-        try:
-            remote_file.GetContentFile(local_filename)
-        except FileNotDownloadableError as e:
-            print(f"Could not download {info['title']} ; message follows.")
-            print(e)
-            continue
-    return [f['title'] for f in file_list]
-
-
-# https://stackoverflow.com/questions/24419188/automating-pydrive-verification-process
+# @TODO: Where to actually put/decide this? How often will we need to download new models? Automatic or manual?
+DOWNLOAD_MODELS = True
 if DOWNLOAD_MODELS:
-    gauth = GoogleAuth()
-    gauth.LoadCredentialsFile("creds-gdrive.txt")
-    if gauth.credentials is None:
-        gauth.LocalWebserverAuth()
-    elif gauth.access_token_expired:
-        gauth.Refresh()
-    else:
-        gauth.Authorize()
-    gauth.SaveCredentialsFile("creds-gdrive.txt")
-    drive = GoogleDrive(gauth)
-    download_models(drive, "Colab Notebooks/testfolder/embedded", "models")
-    #download_models(drive, "x0", "trained_agents", owner='Keith England')
+    download_models("trained_agents", path=os.getenv('GDRIVE_PATH'), root=os.getenv('GDRIVE_ROOT') or 'root')
 
 def naive_agent_action(env, base_equity_weight, rebal_strategy, age_obs, sop_equity_weight, first_step):
     # env: environment to evaluate agent in
@@ -186,25 +133,19 @@ def eval_agents(env, count_episodes=1000, trained_naive_both='both',
 
     return results
 
-if __name__ == '__main__':
-    results = eval_agents(TrainingEnv(), count_episodes=10, trained_naive_both='both',
-                          trained_path='trained_agents/')
 
+def summarize(results: pd.DataFrame) -> pd.DataFrame:
     base = [('mean', 'mean'), ('std', 'std'), ('spread', np.ptp)]
     aggs = {'reward': [*base, ('% ruin', lambda r: (r < 0).mean())],
             'ending_age': base, 'ending_portfolio_value': base}
     individual = results.groupby('agent_name').agg(aggs)
-
-    # TODO: Break down this file into smaller files (plus others)
-    # TODO: Research PyCharm so Keith can explore in console after running
     trained = individual[individual.index.str.contains('Counter\d+$')]
     matches = trained.index.str.extract('(.*)_Counter\d+$', expand=False)
     combined = trained.groupby(matches).mean().rename('{}_Average'.format)
-
     summary = pd.concat([individual, combined])
     with pd.option_context('display.max_rows', 10, 'display.max_columns', None, 'display.width', None,
                            'display.max_colwidth', 25):
-        print(summary.sort_values(by=('reward','mean'), ascending=False).round(4))
+        print(summary.sort_values(by=('reward', 'mean'), ascending=False).round(4))
 
     def get_kind(label):
         if label.startswith('naive_'):
@@ -213,17 +154,36 @@ if __name__ == '__main__':
         if label.endswith('Average'):
             return 'Trained Average'
         return 'Trained'
+
     summary['kind'] = summary.index.map(get_kind)
+    return summary
 
 
+def plot_best(summary: pd.DataFrame, topn_naive=3, topn_trained=None, ax=None):
+    if ax is None:
+        fig, ax = plt.subplots()
     bool_is_naive = summary['kind'] == 'Naive'
-    naive = summary[bool_is_naive].nlargest(3, ('reward', 'mean'))
 
-    comparison_group = pd.concat([naive, summary[~bool_is_naive]])
+    naive = summary[bool_is_naive]
+    if topn_naive is not None:
+        naive = summary[bool_is_naive].nlargest(topn_naive, ('reward', 'mean'))
+
+    trained = summary[~bool_is_naive]
+    if topn_trained is not None:
+        trained = summary[~bool_is_naive].nlargest(topn_trained, ('reward', 'mean'))
+
+    comparison_group = pd.concat([naive, trained])
     comparison_group.reset_index(inplace=True)
-    ax = sns.barplot(y='agent_name', x=('reward','mean'), hue='kind',
-                     data=comparison_group)
+    sns.barplot(y='agent_name', x=('reward', 'mean'), hue='kind',
+                data=comparison_group, ax=ax)
     ax.set_title('Agent Performance')
     for i in ax.containers:
         ax.bar_label(i, fmt='%.3f')
-    plt.savefig('summary.png', bbox_inches='tight')
+    return ax
+
+if __name__ == '__main__':
+    results = eval_agents(TrainingEnv(), count_episodes=10, trained_naive_both='both',
+                          trained_path='trained_agents/')
+    summary = summarize(results)
+    ax = plot_best(summary, topn_naive=3)
+    ax.get_figure().savefig('summary.png', bbox_inches='tight')

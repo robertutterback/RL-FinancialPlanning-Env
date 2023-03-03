@@ -1,2 +1,5 @@
-Environment/getcreds.txt
-Environment/client_secrets.json
+venv/
+.credentials/
+trained_agents/
+.ipynb_checkpoints/
+.env
