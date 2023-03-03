@@ -5,8 +5,17 @@ np.random.seed(123)
 
 
 class TrainingEnv(Env):
+    """
+    The TrainingEnv class inherits from the base OpenAI Gym Env class.
+    It simulates an environment in which an agent must allocate funds
+    across investable securities in order to maximize a future payoff.
+    """
 
     def __init__(self):
+
+        """
+        Initialize the TrainingEnv instance.
+        """
 
         self.count_buyable_securities = 2
 
@@ -33,6 +42,22 @@ class TrainingEnv(Env):
                                    0, 0.04]) / self.stepsPerYear
 
     def step(self, action: np.ndarray):
+
+        """
+        Take a step in the environment.
+
+        Parameters:
+            - action (np.ndarray): A 1-D numpy array representing the actions taken by the agent. Each element of the
+                array is a percentage representing how much of the available funds should be allocated to each
+                security.
+
+        Returns:
+            - state (np.ndarray): A 1-D numpy array representing the new state of the environment after the step was
+                taken. The state is represented as [client_age, portfolio_value, target_spend_dollars, security_weights].
+            - reward (float): A float representing the reward obtained by the agent after the step was taken.
+            - done (bool): A bool representing whether the episode has ended after the step was taken.
+            - info (dict): A dictionary containing any additional information about the step.
+        """
 
         # assert self.action_space.contains(action), "%r (%s) invalid" % (
         #     action,
@@ -123,6 +148,14 @@ class TrainingEnv(Env):
         return np.array(self.state, dtype=np.float32), reward, done, {}
 
     def reset(self):
+
+        """
+        Reset the environment to its initial state.
+
+        Returns:
+            np.ndarray: The initial state of the environment.
+        """
+
         age_reset = self.start_age
 
         starting_port_value_reset = 1
